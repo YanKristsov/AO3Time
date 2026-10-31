@@ -28,3 +28,5 @@ feature/ao3-metadata-table
 - Файл экспорта: .CSV (универсальный) и/или .XLSX. Предпочтение - оба с возможностью выбора.
 - Разделитель/кодировка: UTF-8.
 - Поля строго по списку: Название, Fandoms, Rating, Category, Relationships, Characters, Additional Tags, Words
+## Интерфейс
+- Оконное приложение (десктоп), общий с фичей 001.
