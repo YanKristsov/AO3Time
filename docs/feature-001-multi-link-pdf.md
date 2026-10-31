@@ -37,3 +37,14 @@ feature/multi-link-pdf
 - Парсинг: requests, BeautifulSoup/lxml
 - PDF: мы ещё не выбрали библиотеку
 - Архив: zipfile
+## Структура проекта (план)
+- src/main.py - точка входа
+- src/ui/ - интерфейс PyQt/PySide
+- src/core/ao3_parser.py - парсинг/получение контента
+- src/core/fichub.py - работа с fichub API
+- src/core/pdf_gen.py - генерация PDF
+- src/core/zip_utils.py - упаковка в ZIP
+- src/core/metadata.py - сбор метаданных для фичи 002
+- assets/ - ресурсы
+- requirements.txt
+- README.md
