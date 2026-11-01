@@ -1,4 +1,4 @@
-﻿import os, sys, re, tempfile
+﻿import os, sys, re, tempfile, asyncio
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
@@ -14,7 +14,6 @@ import csv
 
 if __name__ == '__main__':
     from aiogram import executor
-    import asyncio
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     storage = MemoryStorage()
@@ -99,48 +98,53 @@ if __name__ == '__main__':
         data = await state.get_data()
         links = data.get('links', [])
         fmt = data.get('fmt')
-        await c.answer()
-        await c.message.edit_text(f'Обработка {len(links)} ссылок...')
-        parser = AO3Parser()
-        pdfgen = PDFGenerator()
-        zipper = ZipUtils()
-        mcol = MetadataCollector()
-        out_dir = tempfile.mkdtemp()
-        pdf_files = []
-        meta_rows = []
-        for i, url in enumerate(links):
-            try:
-                info = parser.fetch(url)
-                title = info.get('title', f'work_{i+1}')
-                safe = re.sub(r'[^\w\- ]+', '', title)[:40]
-                pdf_path = os.path.join(out_dir, f'{safe}.pdf')
-                pdfgen.generate(title, pdf_path)
-                pdf_files.append(pdf_path)
-                if meta_flag == 'yes':
-                    meta_rows.append(mcol.collect(url))
-            except Exception as e:
-                pass
-        if fmt == 'zip':
-            zip_path = os.path.join(out_dir, 'ao3time.zip')
-            zipper.pack(pdf_files, zip_path)
-            await c.message.answer_document(types.InputFile(zip_path), caption='Готово')
-        else:
-            for p in pdf_files:
-                await c.message.answer_document(types.InputFile(p))
-        if meta_flag == 'yes' and meta_rows:
-            csv_path = os.path.join(out_dir, 'metadata.csv')
-            with open(csv_path, 'w', newline='', encoding='utf-8-sig') as f:
-                w = csv.DictWriter(f, fieldnames=['Название','Fandoms','Rating','Category','Relationships','Characters','Additional Tags','Words'])
-                w.writeheader()
-                for r in meta_rows:
-                    rr = dict(r)
-                    rr['Fandoms'] = '; '.join(rr.get('Fandoms') or [])
-                    rr['Category'] = '; '.join(rr.get('Category') or [])
-                    rr['Relationships'] = '; '.join(rr.get('Relationships') or [])
-                    rr['Characters'] = '; '.join(rr.get('Characters') or [])
-                    rr['Additional Tags'] = '; '.join(rr.get('Additional Tags') or [])
-                    w.writerow(rr)
-            await c.message.answer_document(types.InputFile(csv_path), caption='Таблица метаданных')
-        await state.finish()
+        try:
+            await c.answer()
+            msg = await c.message.edit_text(f'Обработка {len(links)} ссылок...')
+            parser = AO3Parser()
+            pdfgen = PDFGenerator()
+            zipper = ZipUtils()
+            mcol = MetadataCollector()
+            out_dir = tempfile.mkdtemp()
+            pdf_files = []
+            meta_rows = []
+            for url in links:
+                try:
+                    info = parser.fetch(url)
+                    title = info.get('title', 'untitled')
+                    safe = re.sub(r'[^\w\- ]+', '', title)[:40] or 'work'
+                    pdf_path = os.path.join(out_dir, f'{safe}.pdf')
+                    pdfgen.generate(title, pdf_path)
+                    pdf_files.append(pdf_path)
+                    if meta_flag == 'yes':
+                        meta_rows.append(mcol.collect(url))
+                except Exception as ex:
+                    pass
+            if fmt == 'zip':
+                zip_path = os.path.join(out_dir, 'ao3time.zip')
+                zipper.pack(pdf_files, zip_path)
+                await bot.send_document(c.from_user.id, types.InputFile(zip_path), caption='Готово')
+            else:
+                for p in pdf_files:
+                    await bot.send_document(c.from_user.id, types.InputFile(p))
+            if meta_flag == 'yes' and meta_rows:
+                csv_path = os.path.join(out_dir, 'metadata.csv')
+                with open(csv_path, 'w', newline='', encoding='utf-8-sig') as f:
+                    w = csv.DictWriter(f, fieldnames=['Название','Fandoms','Rating','Category','Relationships','Characters','Additional Tags','Words'])
+                    w.writeheader()
+                    for r in meta_rows:
+                        rr = dict(r)
+                        rr['Fandoms'] = '; '.join(rr.get('Fandoms') or [])
+                        rr['Category'] = '; '.join(rr.get('Category') or [])
+                        rr['Relationships'] = '; '.join(rr.get('Relationships') or [])
+                        rr['Characters'] = '; '.join(rr.get('Characters') or [])
+                        rr['Additional Tags'] = '; '.join(rr.get('Additional Tags') or [])
+                        w.writerow(rr)
+                await bot.send_document(c.from_user.id, types.InputFile(csv_path), caption='Таблица метаданных')
+            await msg.edit_text('Готово')
+        except Exception as e:
+            await c.message.answer(f'Ошибка: {e}')
+        finally:
+            await state.finish()
 
     executor.start_polling(dp, skip_updates=True)
