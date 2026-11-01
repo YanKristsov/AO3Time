@@ -55,8 +55,7 @@ if __name__ == '__main__':
             return
         await state.update_data(links=links)
         await Form.waiting_format.set()
-        await m.answer('Формат выдачи:', reply_markup=format_kb())
-        await m.answer('Я буду присылать файлы в личку бота.')
+        await m.answer('Выбери формат:', reply_markup=format_kb())
 
     @dp.message_handler(state=Form.waiting_links, content_types=['document'])
     async def get_links_file(m: types.Message, state: FSMContext):
@@ -84,8 +83,7 @@ if __name__ == '__main__':
             return
         await state.update_data(links=links)
         await Form.waiting_format.set()
-        await m.answer('Формат выдачи:', reply_markup=format_kb())
-        await m.answer('Я буду присылать файлы в личку бота.')
+        await m.answer('Выбери формат:', reply_markup=format_kb())
 
     @dp.callback_query_handler(lambda c: c.data and c.data.startswith('fmt:'), state=Form.waiting_format)
     async def choose_format(c: types.CallbackQuery, state: FSMContext):
@@ -116,21 +114,31 @@ if __name__ == '__main__':
             meta_rows = []
             for url in links:
                 try:
-                    res = fichub.get_epub(url)
-                    if res:
-                        content, title = res
-                        safe = re.sub(r'[^\w\- ]+', '', title or 'work')[:40] or 'work'
-                        epub_path = os.path.join(out_dir, f'{safe}.epub')
-                        with open(epub_path, 'wb') as f:
-                            f.write(content)
-                        epub_files.append(epub_path)
-                    else:
-                        info = parser.fetch(url)
-                        title = info.get('title', 'untitled')
-                        safe = re.sub(r'[^\w\- ]+', '', title)[:40] or 'work'
-                        pdf_path = os.path.join(out_dir, f'{safe}.pdf')
-                        pdfgen.generate(title, pdf_path)
+                    if fmt == 'epub':
+                        res = fichub.get_epub(url)
+                        if res:
+                            content, title = res
+                            safe = re.sub(r'[^\w\- ]+', '', title or 'work')[:40] or 'work'
+                            epub_path = os.path.join(out_dir, f'{safe}.epub')
+                            with open(epub_path, 'wb') as f:
+                                f.write(content)
+                            epub_files.append(epub_path)
+                            if meta_flag == 'yes':
+                                try:
+                                    meta_rows.append(mcol.collect(url))
+                                except:
+                                    pass
+                            continue
+                    info = parser.fetch(url)
+                    title = info.get('title', 'untitled')
+                    safe = re.sub(r'[^\w\- ]+', '', title)[:40] or 'work'
+                    pdf_path = os.path.join(out_dir, f'{safe}.pdf')
+                    pdfgen.generate(title, pdf_path)
+                    if fmt == 'zip':
                         pdf_files.append(pdf_path)
+                    else:
+                        with open(pdf_path, 'rb') as f:
+                            await bot.send_document(chat_id, types.InputFile(f, filename=os.path.basename(pdf_path)))
                     if meta_flag == 'yes':
                         try:
                             meta_rows.append(mcol.collect(url))
@@ -146,10 +154,6 @@ if __name__ == '__main__':
                 zipper.pack(pdf_files, zip_path)
                 with open(zip_path, 'rb') as f:
                     await bot.send_document(chat_id, types.InputFile(f, filename='ao3time.zip'), caption='PDF в ZIP')
-            elif pdf_files:
-                for p in pdf_files:
-                    with open(p, 'rb') as f:
-                        await bot.send_document(chat_id, types.InputFile(f, filename=os.path.basename(p)))
             if meta_flag == 'yes' and meta_rows:
                 csv_path = os.path.join(out_dir, 'metadata.csv')
                 with open(csv_path, 'w', newline='', encoding='utf-8-sig') as f:
