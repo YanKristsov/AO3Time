@@ -100,7 +100,7 @@ if __name__ == '__main__':
         fmt = data.get('fmt')
         try:
             await c.answer()
-            msg = await c.message.edit_text(f'Обработка {len(links)} ссылок...')
+            await bot.send_message(c.from_user.id, f'Обработка {len(links)} ссылок...')
             parser = AO3Parser()
             pdfgen = PDFGenerator()
             zipper = ZipUtils()
@@ -118,15 +118,17 @@ if __name__ == '__main__':
                     pdf_files.append(pdf_path)
                     if meta_flag == 'yes':
                         meta_rows.append(mcol.collect(url))
-                except Exception as ex:
+                except Exception:
                     pass
-            if fmt == 'zip':
+            if fmt == 'zip' and pdf_files:
                 zip_path = os.path.join(out_dir, 'ao3time.zip')
                 zipper.pack(pdf_files, zip_path)
-                await bot.send_document(c.from_user.id, types.InputFile(zip_path), caption='Готово')
-            else:
+                with open(zip_path, 'rb') as f:
+                    await bot.send_document(c.from_user.id, f, caption='Готово')
+            elif pdf_files:
                 for p in pdf_files:
-                    await bot.send_document(c.from_user.id, types.InputFile(p))
+                    with open(p, 'rb') as f:
+                        await bot.send_document(c.from_user.id, f)
             if meta_flag == 'yes' and meta_rows:
                 csv_path = os.path.join(out_dir, 'metadata.csv')
                 with open(csv_path, 'w', newline='', encoding='utf-8-sig') as f:
@@ -140,10 +142,11 @@ if __name__ == '__main__':
                         rr['Characters'] = '; '.join(rr.get('Characters') or [])
                         rr['Additional Tags'] = '; '.join(rr.get('Additional Tags') or [])
                         w.writerow(rr)
-                await bot.send_document(c.from_user.id, types.InputFile(csv_path), caption='Таблица метаданных')
-            await msg.edit_text('Готово')
+                with open(csv_path, 'rb') as f:
+                    await bot.send_document(c.from_user.id, f, caption='Таблица метаданных')
+            await bot.send_message(c.from_user.id, 'Готово')
         except Exception as e:
-            await c.message.answer(f'Ошибка: {e}')
+            await bot.send_message(c.from_user.id, f'Ошибка: {e}')
         finally:
             await state.finish()
 
