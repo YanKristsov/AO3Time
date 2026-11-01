@@ -40,6 +40,15 @@ if __name__ == '__main__':
         await Form.waiting_links.set()
         await m.answer('Привет! Пришли ссылки на AO3 (по одной на строку) или .txt файл со списком.')
 
+    @dp.message_handler(state='*', commands=['start'])
+    async def start_any(m: types.Message, state: FSMContext):
+        if not allowed(m.from_user.id):
+            await m.answer('Доступ закрыт')
+            return
+        await state.finish()
+        await Form.waiting_links.set()
+        await m.answer('Привет! Пришли ссылки на AO3 (по одной на строку) или .txt файл со списком.')
+
     @dp.message_handler(state=Form.waiting_links, content_types=['text'])
     async def get_links_text(m: types.Message, state: FSMContext):
         links = []
@@ -153,7 +162,7 @@ if __name__ == '__main__':
                 zip_path = os.path.join(out_dir, 'ao3time.zip')
                 zipper.pack(pdf_files, zip_path)
                 with open(zip_path, 'rb') as f:
-                    await bot.send_document(chat_id, types.InputFile(f, filename='ao3time.zip'), caption='PDF в ZIP')
+                    await bot.send_document(chat_id, types.InputFile(f, filename='ao3time.zip'))
             if meta_flag == 'yes' and meta_rows:
                 csv_path = os.path.join(out_dir, 'metadata.csv')
                 with open(csv_path, 'w', newline='', encoding='utf-8-sig') as f:
@@ -169,7 +178,7 @@ if __name__ == '__main__':
                         w.writerow(rr)
                 with open(csv_path, 'rb') as f:
                     await bot.send_document(chat_id, types.InputFile(f, filename='metadata.csv'), caption='Таблица метаданных')
-            await bot.send_message(chat_id, 'Готово')
+            await bot.send_message(chat_id, 'Готово. Можешь прислать новые ссылки.')
         except Exception as e:
             await bot.send_message(chat_id, f'Ошибка: {e}')
         finally:
