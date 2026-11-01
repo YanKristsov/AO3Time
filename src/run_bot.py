@@ -10,6 +10,7 @@ from core.ao3_parser import AO3Parser
 from core.pdf_gen import PDFGenerator
 from core.zip_utils import ZipUtils
 from core.metadata import MetadataCollector
+from core.fichub_api import FichubAPI
 import csv
 
 if __name__ == '__main__':
@@ -19,6 +20,7 @@ if __name__ == '__main__':
     storage = MemoryStorage()
     bot = Bot(token=config.BOT_TOKEN)
     dp = Dispatcher(bot, storage=storage)
+    fichub = FichubAPI()
 
     class Form(StatesGroup):
         waiting_links = State()
@@ -54,6 +56,7 @@ if __name__ == '__main__':
         await state.update_data(links=links)
         await Form.waiting_format.set()
         await m.answer('Формат выдачи:', reply_markup=format_kb())
+        await m.answer('Я буду присылать файлы в личку бота.')
 
     @dp.message_handler(state=Form.waiting_links, content_types=['document'])
     async def get_links_file(m: types.Message, state: FSMContext):
@@ -82,6 +85,7 @@ if __name__ == '__main__':
         await state.update_data(links=links)
         await Form.waiting_format.set()
         await m.answer('Формат выдачи:', reply_markup=format_kb())
+        await m.answer('Я буду присылать файлы в личку бота.')
 
     @dp.callback_query_handler(lambda c: c.data and c.data.startswith('fmt:'), state=Form.waiting_format)
     async def choose_format(c: types.CallbackQuery, state: FSMContext):
@@ -107,25 +111,41 @@ if __name__ == '__main__':
             zipper = ZipUtils()
             mcol = MetadataCollector()
             out_dir = tempfile.mkdtemp()
+            epub_files = []
             pdf_files = []
             meta_rows = []
             for url in links:
                 try:
-                    info = parser.fetch(url)
-                    title = info.get('title', 'untitled')
-                    safe = re.sub(r'[^\w\- ]+', '', title)[:40] or 'work'
-                    pdf_path = os.path.join(out_dir, f'{safe}.pdf')
-                    pdfgen.generate(title, pdf_path)
-                    pdf_files.append(pdf_path)
+                    res = fichub.get_epub(url)
+                    if res:
+                        content, title = res
+                        safe = re.sub(r'[^\w\- ]+', '', title or 'work')[:40] or 'work'
+                        epub_path = os.path.join(out_dir, f'{safe}.epub')
+                        with open(epub_path, 'wb') as f:
+                            f.write(content)
+                        epub_files.append(epub_path)
+                    else:
+                        info = parser.fetch(url)
+                        title = info.get('title', 'untitled')
+                        safe = re.sub(r'[^\w\- ]+', '', title)[:40] or 'work'
+                        pdf_path = os.path.join(out_dir, f'{safe}.pdf')
+                        pdfgen.generate(title, pdf_path)
+                        pdf_files.append(pdf_path)
                     if meta_flag == 'yes':
-                        meta_rows.append(mcol.collect(url))
+                        try:
+                            meta_rows.append(mcol.collect(url))
+                        except:
+                            pass
                 except Exception:
                     continue
+            for p in epub_files:
+                with open(p, 'rb') as f:
+                    await bot.send_document(chat_id, types.InputFile(f, filename=os.path.basename(p)))
             if fmt == 'zip' and pdf_files:
                 zip_path = os.path.join(out_dir, 'ao3time.zip')
                 zipper.pack(pdf_files, zip_path)
                 with open(zip_path, 'rb') as f:
-                    await bot.send_document(chat_id, types.InputFile(f, filename='ao3time.zip'), caption='Готово')
+                    await bot.send_document(chat_id, types.InputFile(f, filename='ao3time.zip'), caption='PDF в ZIP')
             elif pdf_files:
                 for p in pdf_files:
                     with open(p, 'rb') as f:
