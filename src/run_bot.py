@@ -37,8 +37,20 @@ if __name__ == '__main__':
         if not allowed(m.from_user.id):
             await m.answer('Доступ закрыт')
             return
+        await state_finish_safe(state_from_msg(m))
         await Form.waiting_links.set()
         await m.answer('Привет! Пришли ссылки на AO3 (по одной на строку) или .txt файл со списком.')
+
+    async def state_finish_safe(state):
+        try:
+            if state:
+                await state.finish()
+        except:
+            pass
+
+    def state_from_msg(m):
+        # not used
+        return None
 
     @dp.message_handler(state='*', commands=['start'])
     async def start_any(m: types.Message, state: FSMContext):
@@ -123,6 +135,11 @@ if __name__ == '__main__':
             meta_rows = []
             for url in links:
                 try:
+                    if meta_flag == 'yes':
+                        try:
+                            meta_rows.append(mcol.collect(url))
+                        except Exception as ex:
+                            print(ex)
                     if fmt == 'epub':
                         res = fichub.get_epub(url)
                         if res:
@@ -132,11 +149,6 @@ if __name__ == '__main__':
                             with open(epub_path, 'wb') as f:
                                 f.write(content)
                             epub_files.append(epub_path)
-                            if meta_flag == 'yes':
-                                try:
-                                    meta_rows.append(mcol.collect(url))
-                                except:
-                                    pass
                             continue
                     info = parser.fetch(url)
                     title = info.get('title', 'untitled')
@@ -148,12 +160,8 @@ if __name__ == '__main__':
                     else:
                         with open(pdf_path, 'rb') as f:
                             await bot.send_document(chat_id, types.InputFile(f, filename=os.path.basename(pdf_path)))
-                    if meta_flag == 'yes':
-                        try:
-                            meta_rows.append(mcol.collect(url))
-                        except:
-                            pass
-                except Exception:
+                except Exception as ex:
+                    print(ex)
                     continue
             for p in epub_files:
                 with open(p, 'rb') as f:
