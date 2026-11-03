@@ -11,7 +11,6 @@ from core.pdf_gen import PDFGenerator
 from core.zip_utils import ZipUtils
 from core.metadata import MetadataCollector
 from core.fichub_api import FichubAPI
-import csv
 
 if __name__ == '__main__':
     from aiogram import executor
@@ -37,20 +36,12 @@ if __name__ == '__main__':
         if not allowed(m.from_user.id):
             await m.answer('Доступ закрыт')
             return
-        await state_finish_safe(state_from_msg(m))
-        await Form.waiting_links.set()
-        await m.answer('Привет! Пришли ссылки на AO3 (по одной на строку) или .txt файл со списком.')
-
-    async def state_finish_safe(state):
         try:
-            if state:
-                await state.finish()
+            await dp.current_state(user=m.from_user.id).finish()
         except:
             pass
-
-    def state_from_msg(m):
-        # not used
-        return None
+        await Form.waiting_links.set()
+        await m.answer('Пришли ссылки на AO3 по одной или .txt файлом')
 
     @dp.message_handler(state='*', commands=['start'])
     async def start_any(m: types.Message, state: FSMContext):
@@ -59,7 +50,7 @@ if __name__ == '__main__':
             return
         await state.finish()
         await Form.waiting_links.set()
-        await m.answer('Привет! Пришли ссылки на AO3 (по одной на строку) или .txt файл со списком.')
+        await m.answer('Пришли ссылки на AO3 по одной или .txt файлом')
 
     @dp.message_handler(state=Form.waiting_links, content_types=['text'])
     async def get_links_text(m: types.Message, state: FSMContext):
@@ -72,11 +63,11 @@ if __name__ == '__main__':
                 links.append(s)
         links = list(dict.fromkeys(links))
         if not links:
-            await m.answer('Не нашёл ссылок AO3.')
+            await m.answer('Не нашёл ссылки AO3')
             return
         await state.update_data(links=links)
         await Form.waiting_format.set()
-        await m.answer('Выбери формат:', reply_markup=format_kb())
+        await m.answer('В каком формате прислать?', reply_markup=format_kb())
 
     @dp.message_handler(state=Form.waiting_links, content_types=['document'])
     async def get_links_file(m: types.Message, state: FSMContext):
@@ -100,18 +91,18 @@ if __name__ == '__main__':
                 links.append(s)
         links = list(dict.fromkeys(links))
         if not links:
-            await m.answer('Не нашёл ссылок AO3 в файле')
+            await m.answer('Не нашёл ссылки AO3 в файле')
             return
         await state.update_data(links=links)
         await Form.waiting_format.set()
-        await m.answer('Выбери формат:', reply_markup=format_kb())
+        await m.answer('В каком формате прислать?', reply_markup=format_kb())
 
     @dp.callback_query_handler(lambda c: c.data and c.data.startswith('fmt:'), state=Form.waiting_format)
     async def choose_format(c: types.CallbackQuery, state: FSMContext):
         fmt = c.data.split(':')[1]
         await state.update_data(fmt=fmt)
         await Form.waiting_meta.set()
-        await c.message.edit_text('Сформировать таблицу метаданных?')
+        await c.message.edit_text('Нужна ли таблица с данными по документам?')
         await c.message.edit_reply_markup(reply_markup=meta_kb())
         await c.answer()
 
@@ -124,22 +115,22 @@ if __name__ == '__main__':
         chat_id = c.from_user.id
         try:
             await c.answer()
-            await bot.send_message(chat_id, f'Обработка {len(links)} ссылок...')
+            await bot.send_message(chat_id, 'Обработка...')
             parser = AO3Parser()
             pdfgen = PDFGenerator()
             zipper = ZipUtils()
             mcol = MetadataCollector()
             out_dir = tempfile.mkdtemp()
-            epub_files = []
             pdf_files = []
-            meta_rows = []
+            meta_lines = []
             for url in links:
                 try:
+                    meta = None
                     if meta_flag == 'yes':
                         try:
-                            meta_rows.append(mcol.collect(url))
-                        except Exception as ex:
-                            print(ex)
+                            meta = mcol.collect(url)
+                        except Exception:
+                            meta = None
                     if fmt == 'epub':
                         res = fichub.get_epub(url)
                         if res:
@@ -148,8 +139,13 @@ if __name__ == '__main__':
                             epub_path = os.path.join(out_dir, f'{safe}.epub')
                             with open(epub_path, 'wb') as f:
                                 f.write(content)
-                            epub_files.append(epub_path)
+                            with open(epub_path, 'rb') as f:
+                                await bot.send_document(chat_id, types.InputFile(f, filename=os.path.basename(epub_path)))
+                            if meta:
+                                meta_lines.append(f"{meta.get('Название','')} | Fandoms:{'; '.join(meta.get('Fandoms') or [])} | Rating:{meta.get('Rating','')} | Category:{'; '.join(meta.get('Category') or [])} | Relationships:{'; '.join(meta.get('Relationships') or [])} | Characters:{'; '.join(meta.get('Characters') or [])} | Additional Tags:{'; '.join(meta.get('Additional Tags') or [])} | Words:{meta.get('Words','')}")
                             continue
+                        else:
+                            await bot.send_message(chat_id, f'Не удалось получить EPUB: {url}')
                     info = parser.fetch(url)
                     title = info.get('title', 'untitled')
                     safe = re.sub(r'[^\w\- ]+', '', title)[:40] or 'work'
@@ -160,32 +156,24 @@ if __name__ == '__main__':
                     else:
                         with open(pdf_path, 'rb') as f:
                             await bot.send_document(chat_id, types.InputFile(f, filename=os.path.basename(pdf_path)))
-                except Exception as ex:
-                    print(ex)
+                    if meta:
+                        meta_lines.append(f"{meta.get('Название','')} | Fandoms:{'; '.join(meta.get('Fandoms') or [])} | Rating:{meta.get('Rating','')} | Category:{'; '.join(meta.get('Category') or [])} | Relationships:{'; '.join(meta.get('Relationships') or [])} | Characters:{'; '.join(meta.get('Characters') or [])} | Additional Tags:{'; '.join(meta.get('Additional Tags') or [])} | Words:{meta.get('Words','')}")
+                except Exception:
+                    await bot.send_message(chat_id, f'Не удалось обработать: {url}')
                     continue
-            for p in epub_files:
-                with open(p, 'rb') as f:
-                    await bot.send_document(chat_id, types.InputFile(f, filename=os.path.basename(p)))
             if fmt == 'zip' and pdf_files:
                 zip_path = os.path.join(out_dir, 'ao3time.zip')
                 zipper.pack(pdf_files, zip_path)
                 with open(zip_path, 'rb') as f:
                     await bot.send_document(chat_id, types.InputFile(f, filename='ao3time.zip'))
-            if meta_flag == 'yes' and meta_rows:
-                csv_path = os.path.join(out_dir, 'metadata.csv')
-                with open(csv_path, 'w', newline='', encoding='utf-8-sig') as f:
-                    w = csv.DictWriter(f, fieldnames=['Название','Fandoms','Rating','Category','Relationships','Characters','Additional Tags','Words'])
-                    w.writeheader()
-                    for r in meta_rows:
-                        rr = dict(r)
-                        rr['Fandoms'] = '; '.join(rr.get('Fandoms') or [])
-                        rr['Category'] = '; '.join(rr.get('Category') or [])
-                        rr['Relationships'] = '; '.join(rr.get('Relationships') or [])
-                        rr['Characters'] = '; '.join(rr.get('Characters') or [])
-                        rr['Additional Tags'] = '; '.join(rr.get('Additional Tags') or [])
-                        w.writerow(rr)
-                with open(csv_path, 'rb') as f:
-                    await bot.send_document(chat_id, types.InputFile(f, filename='metadata.csv'), caption='Таблица метаданных')
+            if meta_flag == 'yes' and meta_lines:
+                txt_path = os.path.join(out_dir, 'таблица.txt')
+                with open(txt_path, 'w', encoding='utf-8') as f:
+                    f.write('Название | Fandoms | Rating | Category | Relationships | Characters | Additional Tags | Words\n')
+                    for l in meta_lines:
+                        f.write(l + '\n')
+                with open(txt_path, 'rb') as f:
+                    await bot.send_document(chat_id, types.InputFile(f, filename='таблица.txt'))
             await bot.send_message(chat_id, 'Готово. Можешь прислать новые ссылки.')
         except Exception as e:
             await bot.send_message(chat_id, f'Ошибка: {e}')
